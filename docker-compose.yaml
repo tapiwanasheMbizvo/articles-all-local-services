@@ -1,0 +1,144 @@
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: elasticsearch
+    env_file:
+      - /home/developer/dev/env/elastic.env
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - home_net
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # RabbitMQ protocol
+      - "15672:15672" # RabbitMQ management UI
+    env_file:
+      - /home/developer/dev/env/rabbitmq.env
+    networks:
+      - home_net
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.0
+    container_name: kibana
+    env_file:
+      - /home/developer/dev/env/kibana.env
+    ports:
+      - "5601:5601"
+    networks:
+      - home_net
+    depends_on:
+      - elasticsearch
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.0
+    container_name: filebeat
+    user: root   # required to read mounted config/log files
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - app_logs:/app-logs
+    depends_on:
+      - elasticsearch
+    networks:
+      - home_net
+
+  postgres:
+    image: postgres:16
+    platform: linux/arm64
+    container_name: keycloak-postgres
+    restart: unless-stopped
+    env_file:
+      - /home/developer/dev/env/postgres.env
+    ports:
+      - "5443:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - home_net
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.5
+    platform: linux/arm64
+    container_name: keycloak
+    restart: unless-stopped
+    env_file:
+      - /home/developer/dev/env/keycloak.env
+    ports:
+      - "8089:8080"
+    command: [ "start-dev" ]
+    depends_on:
+      - postgres
+    networks:
+      - home_net
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - '--storage.tsdb.retention.time=7d'       # keep last 7 days only
+      - '--storage.tsdb.retention.size=500MB'    # limit storage size
+      - '--web.max-connections=20'               # limit memory for web requests
+      - '--query.max-concurrency=2'              # reduce CPU/RAM load
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    #network_mode: host   # required to read host metrics
+    ports:
+      - "9100:9100"
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SMART_LOGGING=false   # reduce internal logging overhead
+      - GF_RENDERING_MAX_CONCURRENT_RENDER=2
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+
+
+networks:
+  home_net:
+    driver: bridge
+
+volumes:
+  es_data:
+  app_logs:
+  db_data:
+  prometheus_data:
+  grafana_data:
+
+
+
