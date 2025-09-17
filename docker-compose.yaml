@@ -53,7 +53,6 @@ services:
 
   postgres:
     image: postgres:15-alpine3.16
-    platform: linux/arm64
     container_name: postgres
     restart: unless-stopped
     env_file:
@@ -67,7 +66,6 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.5
-    platform: linux/arm64
     container_name: keycloak
     restart: unless-stopped
     env_file:
